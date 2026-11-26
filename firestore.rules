@@ -1,0 +1,192 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default-Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global Primitives
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Validation Blueprint: Subject
+    function isValidSubject(data) {
+      return data.keys().hasAll(['ownerId', 'name', 'code', 'color', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'name', 'code', 'color', 'createdAt', 'updatedAt'])
+        && isValidId(data.ownerId)
+        && data.ownerId == request.auth.uid
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.code is string && data.code.size() >= 1 && data.code.size() <= 24
+        && data.color is string && data.color in ['blue', 'emerald', 'amber', 'rose', 'violet', 'cyan']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Validation Blueprint: Week
+    function isValidWeek(data) {
+      return data.keys().hasAll(['ownerId', 'subjectId', 'weekNumber', 'title', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'subjectId', 'weekNumber', 'title', 'createdAt', 'updatedAt'])
+        && isValidId(data.ownerId)
+        && data.ownerId == request.auth.uid
+        && isValidId(data.subjectId)
+        && data.weekNumber is int && data.weekNumber >= 1 && data.weekNumber <= 52
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Validation Blueprint: Lecture
+    function isValidLecture(data) {
+      return data.keys().hasAll([
+          'ownerId', 'subjectId', 'weekId', 'title', 'transcript',
+          'notesSummary', 'notesBullets', 'notesDefinitions', 'notesExamples',
+          'tags', 'revisionReady', 'sourceType', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'subjectId', 'weekId', 'title', 'transcript',
+          'notesSummary', 'notesBullets', 'notesDefinitions', 'notesExamples',
+          'tags', 'revisionReady', 'sourceType', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.ownerId)
+        && data.ownerId == request.auth.uid
+        && isValidId(data.subjectId)
+        && isValidId(data.weekId)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.transcript is string && data.transcript.size() <= 250000
+        && data.notesSummary is string && data.notesSummary.size() <= 20000
+        && data.notesBullets is list && data.notesBullets.size() <= 60
+        && (data.notesBullets.size() == 0 || (data.notesBullets[0] is string && data.notesBullets[0].size() <= 1000))
+        && data.notesDefinitions is list && data.notesDefinitions.size() <= 40
+        && (data.notesDefinitions.size() == 0 || (
+          data.notesDefinitions[0] is map
+          && data.notesDefinitions[0].keys().hasAll(['term', 'definition'])
+          && data.notesDefinitions[0].keys().hasOnly(['term', 'definition'])
+          && data.notesDefinitions[0].term is string && data.notesDefinitions[0].term.size() <= 160
+          && data.notesDefinitions[0].definition is string && data.notesDefinitions[0].definition.size() <= 1000
+        ))
+        && data.notesExamples is list && data.notesExamples.size() <= 30
+        && (data.notesExamples.size() == 0 || (data.notesExamples[0] is string && data.notesExamples[0].size() <= 1500))
+        && data.tags is list && data.tags.size() <= 10
+        && (data.tags.size() == 0 || (data.tags[0] is string && data.tags[0].size() >= 1 && data.tags[0].size() <= 40))
+        && data.revisionReady is bool
+        && data.sourceType is string && data.sourceType in ['paste', 'file', 'live']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Collection: /subjects/{subjectId}
+    match /subjects/{subjectId} {
+      allow get: if isValidId(subjectId) && isVerifiedUser() && existing().ownerId == request.auth.uid;
+      allow list: if isVerifiedUser() && resource.data.ownerId == request.auth.uid;
+
+      allow create: if isVerifiedUser()
+        && isValidId(subjectId)
+        && isValidSubject(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser()
+        && isValidId(subjectId)
+        && isValidSubject(incoming())
+        && existing().ownerId == request.auth.uid
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'code', 'color', 'updatedAt']);
+
+      allow delete: if isValidId(subjectId) && isVerifiedUser() && existing().ownerId == request.auth.uid;
+    }
+
+    // Collection: /weeks/{weekId}
+    match /weeks/{weekId} {
+      allow get: if isValidId(weekId) && isVerifiedUser() && existing().ownerId == request.auth.uid;
+      allow list: if isVerifiedUser() && resource.data.ownerId == request.auth.uid;
+
+      allow create: if isVerifiedUser()
+        && isValidId(weekId)
+        && isValidWeek(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/subjects/$(incoming().subjectId))
+        && get(/databases/$(database)/documents/subjects/$(incoming().subjectId)).data.ownerId == request.auth.uid;
+
+      allow update: if isVerifiedUser()
+        && isValidId(weekId)
+        && isValidWeek(incoming())
+        && existing().ownerId == request.auth.uid
+        && incoming().ownerId == existing().ownerId
+        && incoming().subjectId == existing().subjectId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['weekNumber', 'title', 'updatedAt']);
+
+      allow delete: if isValidId(weekId) && isVerifiedUser() && existing().ownerId == request.auth.uid;
+    }
+
+    // Collection: /lectures/{lectureId}
+    match /lectures/{lectureId} {
+      allow get: if isValidId(lectureId) && isVerifiedUser() && existing().ownerId == request.auth.uid;
+      allow list: if isVerifiedUser() && resource.data.ownerId == request.auth.uid;
+
+      allow create: if isVerifiedUser()
+        && isValidId(lectureId)
+        && isValidLecture(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/subjects/$(incoming().subjectId))
+        && get(/databases/$(database)/documents/subjects/$(incoming().subjectId)).data.ownerId == request.auth.uid
+        && exists(/databases/$(database)/documents/weeks/$(incoming().weekId))
+        && get(/databases/$(database)/documents/weeks/$(incoming().weekId)).data.ownerId == request.auth.uid
+        && get(/databases/$(database)/documents/weeks/$(incoming().weekId)).data.subjectId == incoming().subjectId;
+
+      allow update: if isVerifiedUser()
+        && isValidId(lectureId)
+        && isValidLecture(incoming())
+        && existing().ownerId == request.auth.uid
+        && incoming().ownerId == existing().ownerId
+        && incoming().subjectId == existing().subjectId
+        && incoming().weekId == existing().weekId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action: Update transcript or title
+          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'transcript', 'sourceType', 'updatedAt'])
+          ||
+          // Action: Generate, regenerate, or edit study notes
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'transcript', 'sourceType',
+            'notesSummary', 'notesBullets', 'notesDefinitions', 'notesExamples',
+            'tags', 'updatedAt'
+          ])
+          ||
+          // Action: Toggle Revision Ready status
+          incoming().diff(existing()).affectedKeys().hasOnly(['revisionReady', 'updatedAt'])
+          ||
+          // Action: Update study tags
+          incoming().diff(existing()).affectedKeys().hasOnly(['tags', 'updatedAt'])
+        );
+
+      allow delete: if isValidId(lectureId) && isVerifiedUser() && existing().ownerId == request.auth.uid;
+    }
+  }
+}

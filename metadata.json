@@ -1,0 +1,8 @@
+{
+  "name": "Lectern — Lecture Transcript & Study Notes",
+  "description": "Turn lecture transcripts into concise, structured study notes, definitions, examples, and exportable PDFs organized by subject and week.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

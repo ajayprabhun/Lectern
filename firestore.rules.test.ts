@@ -1,0 +1,101 @@
+/**
+ * Firestore Security Rules Test Specification (Dirty Dozen Adversarial Suite)
+ * Designed for verification against the Firebase Rules Emulator (@firebase/rules-unit-testing).
+ */
+
+export const DIRTY_DOZEN_CASES = [
+  {
+    id: 1,
+    name: 'Unauthenticated Subject creation must fail',
+    collection: 'subjects',
+    auth: null,
+    expected: 'PERMISSION_DENIED',
+  },
+  {
+    id: 2,
+    name: 'Unverified email Subject creation must fail',
+    collection: 'subjects',
+    auth: { uid: 'user-1', token: { email_verified: false } },
+    expected: 'PERMISSION_DENIED',
+  },
+  {
+    id: 3,
+    name: 'Identity spoofing (ownerId mismatch) must fail',
+    collection: 'subjects',
+    auth: { uid: 'attacker', token: { email_verified: true } },
+    payload: { ownerId: 'victim', name: 'Physics', code: 'PHY101', color: 'blue' },
+    expected: 'PERMISSION_DENIED',
+  },
+  {
+    id: 4,
+    name: 'Shadow field injection (extra undocumented key) must fail',
+    collection: 'subjects',
+    auth: { uid: 'user-1', token: { email_verified: true } },
+    payload: { ownerId: 'user-1', name: 'Physics', code: 'PHY101', color: 'blue', role: 'admin' },
+    expected: 'PERMISSION_DENIED',
+  },
+  {
+    id: 5,
+    name: 'Orphaned Week creation referencing foreign Subject must fail',
+    collection: 'weeks',
+    auth: { uid: 'attacker', token: { email_verified: true } },
+    payload: { ownerId: 'attacker', subjectId: 'victim-subject', weekNumber: 1, title: 'Week 1' },
+    expected: 'PERMISSION_DENIED',
+  },
+  {
+    id: 6,
+    name: 'Mismatched Lecture parent Week/Subject must fail',
+    collection: 'lectures',
+    auth: { uid: 'user-1', token: { email_verified: true } },
+    payload: { ownerId: 'user-1', subjectId: 'subj-a', weekId: 'week-in-subj-b' },
+    expected: 'PERMISSION_DENIED',
+  },
+  {
+    id: 7,
+    name: 'ID poisoning (>128 chars or invalid chars) must fail',
+    collection: 'subjects',
+    docId: 'a'.repeat(130),
+    auth: { uid: 'user-1', token: { email_verified: true } },
+    expected: 'PERMISSION_DENIED',
+  },
+  {
+    id: 8,
+    name: 'Client-forged timestamp (non-serverTimestamp) must fail',
+    collection: 'lectures',
+    auth: { uid: 'user-1', token: { email_verified: true } },
+    payload: { createdAt: '2020-01-01T00:00:00Z', updatedAt: '2020-01-01T00:00:00Z' },
+    expected: 'PERMISSION_DENIED',
+  },
+  {
+    id: 9,
+    name: 'Mutating immutable ownerId or createdAt on update must fail',
+    collection: 'lectures',
+    auth: { uid: 'user-1', token: { email_verified: true } },
+    update: { ownerId: 'user-2' },
+    expected: 'PERMISSION_DENIED',
+  },
+  {
+    id: 10,
+    name: 'Array overflow (>10 tags) must fail',
+    collection: 'lectures',
+    auth: { uid: 'user-1', token: { email_verified: true } },
+    update: { tags: Array.from({ length: 11 }, (_, i) => `Tag${i}`) },
+    expected: 'PERMISSION_DENIED',
+  },
+  {
+    id: 11,
+    name: 'Value type poisoning (non-string bullet item) must fail',
+    collection: 'lectures',
+    auth: { uid: 'user-1', token: { email_verified: true } },
+    update: { notesBullets: [42] },
+    expected: 'PERMISSION_DENIED',
+  },
+  {
+    id: 12,
+    name: 'Unscoped list query without ownerId filter must fail',
+    collection: 'lectures',
+    auth: { uid: 'user-1', token: { email_verified: true } },
+    query: 'unfiltered',
+    expected: 'PERMISSION_DENIED',
+  },
+];
